@@ -1,7 +1,7 @@
 import sys
 import os
 import subprocess
-sys.path.insert(1,'/home/home01/scdrw/scripts/python/processing/run') 
+sys.path.insert(1,'./run') 
 
 make_video = False
 make_image = False
