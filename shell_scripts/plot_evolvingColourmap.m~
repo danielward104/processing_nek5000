@@ -1,0 +1,224 @@
+%% Options.
+clear all; close all
+
+%% Plotting parameters.
+
+% Script parameters.
+strat = 'unstratified';
+jump = 1;
+
+% Turning all warnings off.
+warning('off ','all')
+warning
+
+%% Initialisation.
+
+% Parameters to set from simulation.
+Re = 100;
+Pr = 1;  Pe = Pr*Re;
+
+virtual_origin = 10;
+
+% Checks.
+disp(' ')
+disp(['This simulation is ',  strat, '.']); disp(' ')
+disp('Dimensionless numbers are:')
+disp(['Re = ', num2str(Re), ', Pe = ', num2str(Pe), ', Pr = ', num2str(Pr), '.']); disp(' ')
+
+% Find relevant directories.
+locations = {};
+counter = 1;
+dirs = dir('.'); dirFlags = [dirs.isdir]; dirs = dirs(dirFlags);
+for i = 1:length(dirs)
+    if length(dirs(i).name) == 7
+        locations{counter} = dirs(i).name;
+        counter = counter + 1;
+    end
+end
+%locations = { '3459329' };
+
+nlocations = length(locations);
+
+% Colour map.
+colour_map = load('~/scripts/matlab/colour_map/full_colour_map.mat','-mat');
+colour_map = flipud(colour_map.full_colour_map)/256;
+
+start_line = 13236;
+
+ntotalfiles = 0;
+
+valid_locations = {};
+counter = 1;
+flag = 1;
+
+for Li = 1:nlocations
+    
+    % Read files from location.
+    path_to_files = [ locations{Li}, '/azimuthal_averages/' ];
+    
+    % Count number of files.
+    nfiles = dir([path_to_files,'azs2d.fld*']);
+    nfiles = size(nfiles,1);
+
+    if nfiles > 0
+        valid_locations{counter} = locations{Li};
+        nfiles_vec(counter) = nfiles;
+        counter = counter + 1;
+    
+        if flag == 1
+            % Reading in mesh data from first file.
+            file_name = [path_to_files,'azs2d.fld01'];
+            A = importdata(file_name,' ', start_line-1, 0);
+            
+            % Organising mesh data.
+            x_duplicates = A.data(:,1);
+            z_duplicates = A.data(:,2);
+            
+            % Removing duplicate entries.
+            for i = 1:length(z_duplicates)
+                if isnan(z_duplicates(i)) > 0
+                    z_duplicates(i) = 0;
+                end
+            end
+            minx = min(x_duplicates);
+            maxx = max(x_duplicates);
+            
+            [x,xa,xc] = unique(x_duplicates);
+            [z,za,zc] = unique(z_duplicates);
+            [xz_unq,xza,xzc] = unique([xc,zc],'rows');
+            [X,Z] = meshgrid(x,z);
+            
+            % Scale into Re = 1 space.
+            x = Re^(3/2) * x;
+            z = Re^(3/2) * z;
+            z0 = Re^(3/2) * virtual_origin;
+            
+            nx = length(x);
+            nz = length(z);
+
+            flag = 0;
+
+        end
+
+        ntotalfiles = ntotalfiles + nfiles;
+    end
+end
+
+locations = valid_locations;
+nlocations = length(locations);
+totalcounter = 1;
+
+w_centre = zeros(nz,ntotalfiles);
+zT_centre = zeros(nz,ntotalfiles);
+times = zeros(ntotalfiles,1);
+lasttime = -1;
+
+for Li = 1:nlocations
+   
+    nfiles = nfiles_vec(Li);
+
+    path_to_files = [ locations{Li}, '/azimuthal_averages/' ];
+
+    % Time loop.
+    for ti = 1:jump:nfiles
+        
+        % Reading data at each time-step.
+        file_name = [path_to_files,'azs2d.fld',num2str(ti,'%02.f')];
+        A = importdata(file_name,' ', start_line-1, 0);
+        
+        % Reading time and writing to terminal.
+        time = split(A.textdata{1},' ');
+        time = str2double(time(11));
+        disp(['Reading in time: ',num2str(time),'.'])
+        
+        % Read field data.
+        %u_all = A.data(:,4);
+        w_all = A.data(:,5);
+        T_all = A.data(:,6);
+        
+        % Reformat field data.
+        w = griddata(x_duplicates,z_duplicates,w_all,X,Z);
+        %u = griddata(x_duplicates,z_duplicates,u_all,X,Z);
+        T = griddata(x_duplicates,z_duplicates,T_all,X,Z);
+        
+        % Scale into Re = 1 space.
+        w = Re^-0.5 * w;
+        %u = Re^-0.5 * u;
+        T = Re^(-5/2) * T;
+        time = (Re^2) * time;
+
+        times(totalcounter) = time;
+   
+        %% Operations.
+        
+        if time > lasttime
+            
+            % Centreline values.
+            w_centre(:,totalcounter) = w(:,1);
+            zT_centre(:,totalcounter) = (z + z0).*T(:,1);
+
+            totalcounter = totalcounter + 1;
+
+        end
+        
+        lasttime = time;
+        
+    end     % Time loop.
+end     % File location loop.
+
+%% Plotting
+
+% Remove trailing zeros.
+times = times(1:totalcounter-1);
+w_plot = w_centre(:,1:totalcounter-1);
+zT_plot = zT_centre(:,1:totalcounter-1);
+%%
+
+save('w.mat','w_plot')
+
+figure(2)
+subplot(1,3,[2 3])
+contourf(times,z+z0,w_plot,100,'linecolor','none')
+colormap(gca,colour_map);
+colorbar
+xlabel('$t$','interpreter','latex')
+ylabel('$z$','interpreter','latex')
+
+hold on
+
+plot(times,3*z0 + 12*(times.^(2/3)),'k--')
+
+plot(times,3.8*10^5 * ones(size(times)),'k--')
+
+xlim([min(times) max(times)])
+ylim([min(z+z0) max(z+z0)])
+
+plot_location = [0, 0, 1, 1];
+set(gcf, 'Units', 'Normalized', 'OuterPosition',plot_location)
+
+subplot(1,3,1)
+contourf(times,z+z0,w_plot,100,'linecolor','none')
+colormap(gca,colour_map);
+xlabel('$t$','interpreter','latex')
+ylabel('$z$','interpreter','latex')
+
+hold on
+plot(times, z0 + 0.20 * times,'k--')
+
+xlim([0 0.2*10^7])
+ylim([z0 3 * 10^5])
+
+sgtitle('$w$','interpreter','latex')
+
+saveas(2,'w_centrecontour.png')
+%%
+figure(3)
+contourf(times,z+z0,zT_plot,100,'linecolor','none')
+colormap(gca,colour_map);
+colorbar
+caxis([0 1.4])
+title('zT')
+xlabel('t')
+ylabel('z')
+saveas(3,'zT_centrecontour.png')
+
